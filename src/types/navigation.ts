@@ -4,6 +4,7 @@
 export type ScreenName = 'Welcome' | 'Login' | 'Home' | 'Catalog' | 'Reader' | 'Profile';
 
 export interface RootStackParamList {
+  [key: string]: object | undefined;
   Welcome: undefined;
   Login: undefined;
   Home: undefined;
