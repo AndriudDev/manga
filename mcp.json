@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "d:/_INSTITUTO SAN SEBASTIAN/6to Trimestre/Aplicaciones Moviles/Ex1/manga"
+      ]
+    }
+  }
+}
