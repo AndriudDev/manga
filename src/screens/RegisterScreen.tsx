@@ -12,40 +12,52 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
 import { AuthController } from '../controllers/AuthController';
 
-interface LoginErrors {
+interface RegisterErrors {
+  name?: string;
   email?: string;
   password?: string;
+  confirm?: string;
 }
 
-interface LoginScreenProps {
-  onRegister: () => void;
-  onLoginSuccess: () => void;
+interface RegisterScreenProps {
+  onBackToLogin: () => void;
+  onRegisterSuccess: () => void;
 }
 
-export default function LoginScreen({
-  onRegister,
-  onLoginSuccess,
-}: LoginScreenProps) {
+export default function RegisterScreen({
+  onBackToLogin,
+  onRegisterSuccess,
+}: RegisterScreenProps) {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState<LoginErrors>({});
+  const [confirm, setConfirm] = useState('');
+  const [errors, setErrors] = useState<RegisterErrors>({});
   const [formError, setFormError] = useState<string | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isRegistered, setIsRegistered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const validate = (): LoginErrors => {
-    const newErrors: LoginErrors = {};
+  const validate = (): RegisterErrors => {
+    const newErrors: RegisterErrors = {};
+    if (name.trim() === '') {
+      newErrors.name = 'El nombre es obligatorio';
+    }
     if (email.trim() === '') {
       newErrors.email = 'El correo es obligatorio';
     }
     if (password.trim() === '') {
       newErrors.password = 'La contraseña es obligatoria';
     }
+    if (confirm.trim() === '') {
+      newErrors.confirm = 'Confirma la contraseña';
+    } else if (password !== confirm) {
+      newErrors.confirm = 'Las contraseñas no coinciden';
+    }
     return newErrors;
   };
 
-  const clearError = (field: keyof LoginErrors) => {
+  const clearError = (field: keyof RegisterErrors) => {
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
@@ -59,32 +71,37 @@ export default function LoginScreen({
     if (Object.keys(validationErrors).length > 0) return;
 
     setIsSubmitting(true);
-    const result = await AuthController.login(email, password);
+    const result = await AuthController.register({ name, email, password });
     setIsSubmitting(false);
 
     if (!result.ok) {
-      setFormError(result.error);
+      const fieldError = result.error === 'Ya existe una cuenta con este correo' ? 'email' : undefined;
+      if (fieldError) {
+        setErrors((prev) => ({ ...prev, [fieldError]: result.error }));
+      } else {
+        setFormError(result.error);
+      }
       return;
     }
-    setIsLoggedIn(true);
+    setIsRegistered(true);
   };
 
   // Estado de éxito
-  if (isLoggedIn) {
+  if (isRegistered) {
     return (
       <View style={styles.container}>
         <View style={styles.successContainer}>
           <View style={styles.successIconCircle}>
             <Ionicons name="checkmark" size={56} color={Colors.textPrimary} />
           </View>
-          <Text style={styles.successTitle}>¡Bienvenido a MangaTools!</Text>
+          <Text style={styles.successTitle}>¡Cuenta creada!</Text>
           <Text style={styles.successSubtitle}>
-            Has iniciado sesión correctamente.
+            Registro exitoso, bienvenido a MangaTools.
           </Text>
           <TouchableOpacity
             style={styles.button}
             activeOpacity={0.8}
-            onPress={onLoginSuccess}
+            onPress={onRegisterSuccess}
           >
             <Text style={styles.buttonText}>Continuar</Text>
           </TouchableOpacity>
@@ -102,12 +119,10 @@ export default function LoginScreen({
       {/* Encabezado */}
       <View style={styles.header}>
         <View style={styles.iconCircle}>
-          <Ionicons name="person" size={36} color={Colors.accentPrimary} />
+          <Ionicons name="person-add" size={36} color={Colors.accentPrimary} />
         </View>
-        <Text style={styles.title}>Iniciar Sesión</Text>
-        <Text style={styles.subtitle}>
-          Ingresa tus credenciales para acceder
-        </Text>
+        <Text style={styles.title}>Crear Cuenta</Text>
+        <Text style={styles.subtitle}>Regístrate para empezar</Text>
       </View>
 
       {/* Formulario */}
@@ -118,6 +133,38 @@ export default function LoginScreen({
             <Text style={styles.formErrorText}>{formError}</Text>
           </View>
         ) : null}
+
+        {/* Campo nombre */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Nombre</Text>
+          <View
+            style={[
+              styles.inputWrapper,
+              errors.name && styles.inputWrapperError,
+            ]}
+          >
+            <Ionicons
+              name="person-outline"
+              size={20}
+              color={errors.name ? Colors.error : Colors.textSecondary}
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Tu nombre"
+              placeholderTextColor={Colors.textSecondary}
+              value={name}
+              onChangeText={(text) => {
+                setName(text);
+                clearError('name');
+              }}
+              autoCapitalize="words"
+            />
+          </View>
+          {errors.name ? (
+            <Text style={styles.errorText}>{errors.name}</Text>
+          ) : null}
+        </View>
 
         {/* Campo correo */}
         <View style={styles.inputGroup}>
@@ -170,12 +217,13 @@ export default function LoginScreen({
             />
             <TextInput
               style={styles.input}
-              placeholder="••••••••"
+              placeholder="Mínimo 6 caracteres"
               placeholderTextColor={Colors.textSecondary}
               value={password}
               onChangeText={(text) => {
                 setPassword(text);
                 clearError('password');
+                setErrors((prev) => ({ ...prev, confirm: undefined }));
               }}
               secureTextEntry={!showPassword}
             />
@@ -195,7 +243,39 @@ export default function LoginScreen({
           ) : null}
         </View>
 
-        {/* Botón ingresar */}
+        {/* Campo confirmar contraseña */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Confirmar Contraseña</Text>
+          <View
+            style={[
+              styles.inputWrapper,
+              errors.confirm && styles.inputWrapperError,
+            ]}
+          >
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={20}
+              color={errors.confirm ? Colors.error : Colors.textSecondary}
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Repite la contraseña"
+              placeholderTextColor={Colors.textSecondary}
+              value={confirm}
+              onChangeText={(text) => {
+                setConfirm(text);
+                clearError('confirm');
+              }}
+              secureTextEntry={!showPassword}
+            />
+          </View>
+          {errors.confirm ? (
+            <Text style={styles.errorText}>{errors.confirm}</Text>
+          ) : null}
+        </View>
+
+        {/* Botón registrarse */}
         <TouchableOpacity
           style={[styles.button, isSubmitting && styles.buttonDisabled]}
           activeOpacity={0.8}
@@ -205,15 +285,15 @@ export default function LoginScreen({
           {isSubmitting ? (
             <ActivityIndicator color={Colors.textPrimary} size="small" />
           ) : (
-            <Text style={styles.buttonText}>Ingresar</Text>
+            <Text style={styles.buttonText}>Registrarse</Text>
           )}
         </TouchableOpacity>
 
-        {/* Enlace a registro */}
-        <View style={styles.registerRow}>
-          <Text style={styles.registerPrompt}>¿No tienes cuenta?</Text>
-          <TouchableOpacity onPress={onRegister} activeOpacity={0.7}>
-            <Text style={styles.registerLink}>Regístrate</Text>
+        {/* Enlace a login */}
+        <View style={styles.loginRow}>
+          <Text style={styles.loginPrompt}>¿Ya tienes una cuenta?</Text>
+          <TouchableOpacity onPress={onBackToLogin} activeOpacity={0.7}>
+            <Text style={styles.loginLink}>Inicia sesión</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -333,18 +413,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Registro
-  registerRow: {
+  // Login
+  loginRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 6,
     marginTop: 4,
   },
-  registerPrompt: {
+  loginPrompt: {
     fontSize: 15,
     color: Colors.textSecondary,
   },
-  registerLink: {
+  loginLink: {
     fontSize: 15,
     fontWeight: '700',
     color: Colors.accentPrimary,

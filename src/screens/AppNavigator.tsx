@@ -5,6 +5,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
+import RegisterScreen from '../screens/RegisterScreen';
+import HomeScreen from '../screens/HomeScreen';
 import { Colors } from '../theme/colors';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -23,7 +25,9 @@ export default function AppNavigator() {
         }}
       >
         <Stack.Screen name="Welcome" component={WelcomeScreenWrapper} />
-        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Login" component={LoginScreenWrapper} />
+        <Stack.Screen name="Register" component={RegisterScreenWrapper} />
+        <Stack.Screen name="Home" component={HomeScreenWrapper} />
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -32,4 +36,29 @@ export default function AppNavigator() {
 function WelcomeScreenWrapper() {
   const navigation = useNavigation<NavProp>();
   return <WelcomeScreen onLogin={() => navigation.navigate('Login')} />;
+}
+
+function LoginScreenWrapper() {
+  const navigation = useNavigation<NavProp>();
+  return (
+    <LoginScreen
+      onRegister={() => navigation.navigate('Register')}
+      onLoginSuccess={() => navigation.navigate('Home')}
+    />
+  );
+}
+
+function RegisterScreenWrapper() {
+  const navigation = useNavigation<NavProp>();
+  return (
+    <RegisterScreen
+      onBackToLogin={() => navigation.navigate('Login')}
+      onRegisterSuccess={() => navigation.navigate('Home')}
+    />
+  );
+}
+
+function HomeScreenWrapper() {
+  const navigation = useNavigation<NavProp>();
+  return <HomeScreen onLogout={() => navigation.popToTop()} />;
 }
