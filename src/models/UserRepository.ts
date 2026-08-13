@@ -2,10 +2,14 @@
 // Acceso a datos: persistencia de usuarios y de la sesión activa en AsyncStorage.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User } from './User';
+import { User, hashPassword } from './User';
 
 const USERS_KEY = '@mangatools/users';
 const SESSION_KEY = '@mangatools/session';
+
+// Credenciales del usuario administrador sembrado por defecto
+export const ADMIN_EMAIL = 'admin';
+export const ADMIN_PASSWORD = 'admin';
 
 function parseUsers(raw: string | null): User[] {
   if (!raw) return [];
@@ -53,5 +57,20 @@ export const UserRepository = {
 
   async clearSession(): Promise<void> {
     await AsyncStorage.removeItem(SESSION_KEY);
+  },
+
+  /**
+   * Garantiza que el usuario administrador por defecto exista.
+   * Se invoca al arrancar la app.
+   */
+  async seedAdminUser(): Promise<void> {
+    if (await this.emailExists(ADMIN_EMAIL)) return;
+    const admin: User = {
+      name: 'Administrador',
+      email: ADMIN_EMAIL,
+      passwordHash: hashPassword(ADMIN_PASSWORD),
+      createdAt: new Date().toISOString(),
+    };
+    await this.addUser(admin);
   },
 };

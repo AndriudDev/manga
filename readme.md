@@ -206,54 +206,7 @@ Al ejecutar `npx expo start`, se muestra un código QR en terminal. Escanéalo c
 
 ## Prompts Utilizados (Desarrollo Asistido por IA)
 
-El siguiente registro documenta los prompts exactos ingresados por el equipo para generar cada componente del proyecto mediante asistencia de IA. Cada prompt fue diseñado para entregar instrucciones precisas, y la IA respondió generando código tipado, modular y alineado con las reglas de `AGENTS.md`.
 
-### Prompt 1 — Tema y tipos base
-
-```
-Hola. Revisa el archivo AGENTS.md. Por favor crea la carpeta src/theme con un archivo colors.ts
-que exporte la paleta de colores definida para la app de manga. Además, crea
-src/types/navigation.ts para los tipos de estados de pantalla.
-```
-
-**Resultado:** se creó `src/theme/colors.ts` con la paleta de colores dark mode (tokens `as const`) y `src/types/navigation.ts` con la interfaz `RootStackParamList` tipando las 6 rutas de la app.
-
-### Prompt 2 — Pantalla de Bienvenida (Welcome Screen)
-
-```
-Crea el componente src/screens/WelcomeScreen.tsx y sus componentes asociados si son necesarios.
-Debe tener la identidad visual de nuestra app de Manga (MangaTools): título atractivo, eslogan,
-un ícono o composición gráfica relativa a manga/cómics, y un botón destacado para
-"Iniciar Sesión" que cambie de pantalla.
-```
-
-**Resultado:** se creó `WelcomeScreen.tsx` con composición gráfica (ícono book + estrellas decorativas), título "MangaTools" con accent rojo, eslogan, botón de login y navegación a LoginScreen. También se generaron `AppNavigator.tsx` (stack navigation) y se actualizó `App.tsx`.
-
-### Prompt 3 — Pantalla de Login Interactiva
-
-```
-Crea src/screens/LoginScreen.tsx. Debe incluir campos para Usuario/Correo y Contraseña,
-botón de "Ingresar" y un botón para "Volver". Debe tener validaciones visuales:
-si presiono Ingresar con campos vacíos, debe mostrar los campos con borde rojo y un
-mensaje de error. Si coloco datos, debe simular el éxito con un mensaje o alerta visual.
-```
-
-**Resultado:** se reescribió `LoginScreen.tsx` con formulario completo: dos inputs con íconos, validación en tiempo real (borde rojo + mensaje de error), toggle de visibilidad de contraseña, spinner de carga y pantalla de éxito con ícono verde y mensaje de bienvenida.
-
-### Prompt 4 — Documentación del Proyecto (README)
-
-```
-Por favor, genera un archivo README.md completo, profesional y perfectamente estructurado
-para este proyecto de aplicación móvil en React Native (Expo) con temática Manga/MangaTools.
-El README debe contener las siguientes secciones: título y descripción general, stack tecnológico,
-estructura del proyecto, constitución del Arnés Agéntico (AGENTS.md, MCP, Context7),
-flujo de pantallas e instrucciones de instalación. Asegúrate de formatear el texto con
-títulos claros, listas, bloques de código explicativos y un tono técnico y profesional.
-```
-
-**Resultado:** se generó este archivo `README.md` con 8 secciones estructuradas, diagrama ASCII de flujo de pantallas, tabla de dependencias con versiones exactas y documentación completa del arnés agéntico.
-
----
 
 ## Licencia
 
