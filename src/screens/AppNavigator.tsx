@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,6 +8,7 @@ import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import HomeScreen from '../screens/HomeScreen';
 import { Colors } from '../theme/colors';
+import { AuthController } from '../controllers/AuthController';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -60,5 +61,16 @@ function RegisterScreenWrapper() {
 
 function HomeScreenWrapper() {
   const navigation = useNavigation<NavProp>();
-  return <HomeScreen onLogout={() => navigation.popToTop()} />;
+  const [userName, setUserName] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    AuthController.getCurrentUser().then((user) => setUserName(user?.name));
+  }, []);
+
+  return (
+    <HomeScreen
+      userName={userName}
+      onLogout={() => navigation.popToTop()}
+    />
+  );
 }

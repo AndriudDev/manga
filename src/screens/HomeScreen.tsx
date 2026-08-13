@@ -1,82 +1,163 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
+  FlatList,
   ActivityIndicator,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
-import { AuthController } from '../controllers/AuthController';
-import { User } from '../models/User';
+import { TaskController } from '../controllers/TaskController';
+import { TodoTask } from '../models/Task';
 
 interface HomeScreenProps {
+  userName?: string;
   onLogout: () => void;
 }
 
-export default function HomeScreen({ onLogout }: HomeScreenProps) {
-  const [user, setUser] = useState<User | undefined>(undefined);
+export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
+  const [tasks, setTasks] = useState<TodoTask[]>([]);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    AuthController.getCurrentUser().then((current) => {
-      setUser(current);
-      setLoading(false);
-    });
+  const refresh = useCallback(async () => {
+    setTasks(await TaskController.getTasks());
   }, []);
 
-  const handleLogout = async () => {
-    await AuthController.logout();
-    onLogout();
+  useEffect(() => {
+    refresh().finally(() => setLoading(false));
+  }, [refresh]);
+
+  const handleAdd = async () => {
+    if (input.trim().length === 0) return;
+    const updated = await TaskController.addTask(input);
+    setTasks(updated);
+    setInput('');
   };
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator color={Colors.accentPrimary} size="large" />
-      </View>
-    );
-  }
+  const handleToggle = async (id: string) => {
+    setTasks(await TaskController.toggleTask(id));
+  };
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.backgroundPrimary} />
+  const handleDelete = async (id: string) => {
+    setTasks(await TaskController.deleteTask(id));
+  };
 
-      <View style={styles.header}>
-        <View style={styles.logoCircle}>
-          <Ionicons name="book" size={40} color={Colors.accentPrimary} />
-        </View>
-        <Text style={styles.welcome}>¡Hola, {user ? user.name : 'Lector'}!</Text>
-        <Text style={styles.subtitle}>
-          Tu sesión está activa en MangaTools
-        </Text>
-      </View>
+  const pendingCount = tasks.filter((task) => !task.completed).length;
 
-      <View style={styles.card}>
-        <View style={styles.cardRow}>
-          <Ionicons name="person-circle-outline" size={22} color={Colors.accentSecondary} />
-          <Text style={styles.cardLabel}>Usuario</Text>
-          <Text style={styles.cardValue}>{user ? user.name : '—'}</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.cardRow}>
-          <Ionicons name="mail-outline" size={22} color={Colors.accentSecondary} />
-          <Text style={styles.cardLabel}>Correo</Text>
-          <Text style={styles.cardValue}>{user ? user.email : '—'}</Text>
-        </View>
-      </View>
-
+  const renderItem = ({ item }: { item: TodoTask }) => (
+    <View style={styles.taskRow}>
       <TouchableOpacity
-        style={styles.logoutButton}
-        activeOpacity={0.8}
-        onPress={handleLogout}
+        style={[styles.checkbox, item.completed && styles.checkboxDone]}
+        activeOpacity={0.7}
+        onPress={() => handleToggle(item.id)}
       >
-        <Ionicons name="log-out-outline" size={20} color={Colors.textPrimary} />
-        <Text style={styles.logoutButtonText}>Cerrar Sesión</Text>
+        {item.completed ? (
+          <Ionicons name="checkmark" size={16} color={Colors.textPrimary} />
+        ) : null}
+      </TouchableOpacity>
+      <Text
+        style={[styles.taskTitle, item.completed && styles.taskTitleDone]}
+        numberOfLines={2}
+      >
+        {item.title}
+      </Text>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        activeOpacity={0.7}
+        onPress={() => handleDelete(item.id)}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons name="trash-outline" size={20} color={Colors.error} />
       </TouchableOpacity>
     </View>
+  );
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={Colors.backgroundPrimary} />
+
+      {/* Encabezado */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.welcome}>¡Hola, {userName ?? 'Lector'}!</Text>
+          <Text style={styles.subtitle}>
+            Tienes {pendingCount} tarea{pendingCount === 1 ? '' : 's'} pendiente
+            {pendingCount === 1 ? '' : 's'}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.logoutButton}
+          activeOpacity={0.7}
+          onPress={onLogout}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="log-out-outline" size={22} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Entrada nueva tarea */}
+      <View style={styles.inputRow}>
+        <View style={styles.inputWrapper}>
+          <Ionicons
+            name="add-circle-outline"
+            size={20}
+            color={Colors.textSecondary}
+            style={styles.inputIcon}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Agregar nueva tarea..."
+            placeholderTextColor={Colors.textSecondary}
+            value={input}
+            onChangeText={setInput}
+            onSubmitEditing={handleAdd}
+            returnKeyType="done"
+          />
+        </View>
+        <TouchableOpacity
+          style={[styles.addButton, input.trim().length === 0 && styles.addButtonDisabled]}
+          activeOpacity={0.8}
+          onPress={handleAdd}
+          disabled={input.trim().length === 0}
+        >
+          <Ionicons name="add" size={24} color={Colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Lista de tareas */}
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={Colors.accentPrimary} size="large" />
+        </View>
+      ) : (
+        <FlatList
+          data={tasks}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="clipboard-outline" size={48} color={Colors.textSecondary} />
+              <Text style={styles.emptyTitle}>Sin tareas por ahora</Text>
+              <Text style={styles.emptySubtitle}>
+                Agrega tu primera tarea usando el campo de arriba.
+              </Text>
+            </View>
+          }
+        />
+      )}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -84,83 +165,142 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.backgroundPrimary,
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 80,
+    paddingTop: 60,
   },
+
+  // Encabezado
   header: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 32,
-    gap: 10,
-  },
-  logoCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: Colors.surfaceSecondary,
-    borderWidth: 2,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    marginBottom: 20,
   },
   welcome: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '800',
     color: Colors.textPrimary,
-    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: Colors.textSecondary,
-    textAlign: 'center',
+    marginTop: 4,
   },
-  card: {
-    width: '100%',
-    backgroundColor: Colors.surfaceSecondary,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    paddingHorizontal: 20,
-    marginBottom: 32,
+  logoutButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.surfacePrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cardRow: {
+
+  // Entrada
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 16,
+    paddingHorizontal: 24,
+    marginBottom: 16,
   },
-  cardLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  cardValue: {
+  inputWrapper: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    textAlign: 'right',
-  },
-  divider: {
-    height: 1.5,
-    backgroundColor: Colors.border,
-  },
-  logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.surfacePrimary,
+    backgroundColor: Colors.surfaceSecondary,
     borderWidth: 1.5,
     borderColor: Colors.border,
     borderRadius: 12,
-    paddingVertical: 16,
-    width: '100%',
+    paddingHorizontal: 14,
+    height: 52,
   },
-  logoutButtonText: {
+  inputIcon: {
+    marginRight: 10,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
     color: Colors.textPrimary,
-    fontSize: 17,
+    height: '100%',
+  },
+  addButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: Colors.buttonPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addButtonDisabled: {
+    opacity: 0.5,
+  },
+
+  // Lista
+  listContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.accentSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxDone: {
+    backgroundColor: Colors.accentSecondary,
+    borderColor: Colors.accentSecondary,
+  },
+  taskTitle: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.textPrimary,
+    fontWeight: '600',
+  },
+  taskTitleDone: {
+    color: Colors.textSecondary,
+    textDecorationLine: 'line-through',
+  },
+  deleteButton: {
+    padding: 4,
+  },
+  separator: {
+    height: 10,
+  },
+
+  // Estados
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 18,
     fontWeight: '700',
+    color: Colors.textPrimary,
+    marginTop: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
 });
