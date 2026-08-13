@@ -10,11 +10,16 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../theme/colors';
 import { TaskController } from '../controllers/TaskController';
 import { TodoTask } from '../models/Task';
+import { persistPhoto, deletePhoto } from '../models/PhotoStore';
 
 interface HomeScreenProps {
   userName?: string;
@@ -25,6 +30,8 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
   const [tasks, setTasks] = useState<TodoTask[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
+  const [previewPhoto, setPreviewPhoto] = useState<string | undefined>(undefined);
+  const [viewingTask, setViewingTask] = useState<TodoTask | undefined>(undefined);
 
   const refresh = useCallback(async () => {
     setTasks(await TaskController.getTasks());
@@ -34,15 +41,59 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
     refresh().finally(() => setLoading(false));
   }, [refresh]);
 
+  const openCamera = async (): Promise<ImagePicker.ImagePickerAsset | undefined> => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        'Permiso requerido',
+        'Necesitamos acceso a la cámara para adjuntar fotos a tus tareas.',
+      );
+      return undefined;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [3, 4],
+      quality: 0.7,
+    });
+    if (result.canceled) return undefined;
+    return result.assets[0];
+  };
+
+  const handleCaptureForNew = async () => {
+    const asset = await openCamera();
+    if (!asset) return;
+    setPreviewPhoto(await persistPhoto(asset.uri));
+  };
+
+  const handleRemovePreview = async () => {
+    if (previewPhoto) {
+      await deletePhoto(previewPhoto);
+      setPreviewPhoto(undefined);
+    }
+  };
+
   const handleAdd = async () => {
     if (input.trim().length === 0) return;
-    const updated = await TaskController.addTask(input);
+    const updated = await TaskController.addTask(input, previewPhoto);
     setTasks(updated);
     setInput('');
+    // La foto pasa a ser propiedad de la tarea; no se elimina el archivo.
+    setPreviewPhoto(undefined);
   };
 
   const handleToggle = async (id: string) => {
     setTasks(await TaskController.toggleTask(id));
+  };
+
+  const handleAttachPhoto = async (id: string) => {
+    const asset = await openCamera();
+    if (!asset) return;
+    setTasks(await TaskController.attachPhoto(id, asset.uri));
+  };
+
+  const handleClearPhoto = async (id: string) => {
+    setTasks(await TaskController.clearPhoto(id));
+    setViewingTask(undefined);
   };
 
   const handleDelete = async (id: string) => {
@@ -52,30 +103,49 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
   const pendingCount = tasks.filter((task) => !task.completed).length;
 
   const renderItem = ({ item }: { item: TodoTask }) => (
-    <View style={styles.taskRow}>
-      <TouchableOpacity
-        style={[styles.checkbox, item.completed && styles.checkboxDone]}
-        activeOpacity={0.7}
-        onPress={() => handleToggle(item.id)}
-      >
-        {item.completed ? (
-          <Ionicons name="checkmark" size={16} color={Colors.textPrimary} />
-        ) : null}
-      </TouchableOpacity>
-      <Text
-        style={[styles.taskTitle, item.completed && styles.taskTitleDone]}
-        numberOfLines={2}
-      >
-        {item.title}
-      </Text>
-      <TouchableOpacity
-        style={styles.deleteButton}
-        activeOpacity={0.7}
-        onPress={() => handleDelete(item.id)}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <Ionicons name="trash-outline" size={20} color={Colors.error} />
-      </TouchableOpacity>
+    <View style={styles.taskCard}>
+      <View style={styles.taskRow}>
+        <TouchableOpacity
+          style={[styles.checkbox, item.completed && styles.checkboxDone]}
+          activeOpacity={0.7}
+          onPress={() => handleToggle(item.id)}
+        >
+          {item.completed ? (
+            <Ionicons name="checkmark" size={16} color={Colors.textPrimary} />
+          ) : null}
+        </TouchableOpacity>
+        <Text
+          style={[styles.taskTitle, item.completed && styles.taskTitleDone]}
+          numberOfLines={2}
+        >
+          {item.title}
+        </Text>
+        <TouchableOpacity
+          style={styles.iconButton}
+          activeOpacity={0.7}
+          onPress={() => handleAttachPhoto(item.id)}
+          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+        >
+          <Ionicons name="camera-outline" size={20} color={Colors.accentTertiary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.iconButton}
+          activeOpacity={0.7}
+          onPress={() => handleDelete(item.id)}
+          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+        >
+          <Ionicons name="trash-outline" size={20} color={Colors.error} />
+        </TouchableOpacity>
+      </View>
+      {item.photoUri ? (
+        <TouchableOpacity
+          style={styles.thumbContainer}
+          activeOpacity={0.8}
+          onPress={() => setViewingTask(item)}
+        >
+          <Image source={{ uri: item.photoUri }} style={styles.taskThumb} resizeMode="cover" />
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 
@@ -125,14 +195,41 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
           />
         </View>
         <TouchableOpacity
-          style={[styles.addButton, input.trim().length === 0 && styles.addButtonDisabled]}
+          style={styles.squareButton}
+          activeOpacity={0.7}
+          onPress={handleCaptureForNew}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="camera" size={22} color={Colors.accentTertiary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.addButton,
+            input.trim().length === 0 && styles.addButtonDisabled,
+          ]}
           activeOpacity={0.8}
           onPress={handleAdd}
           disabled={input.trim().length === 0}
         >
-          <Ionicons name="add" size={24} color={Colors.textPrimary} />
+          <Ionicons name="add" size={26} color={Colors.textPrimary} />
         </TouchableOpacity>
       </View>
+
+      {/* Vista previa de la foto para la nueva tarea */}
+      {previewPhoto ? (
+        <View style={styles.previewRow}>
+          <Image source={{ uri: previewPhoto }} style={styles.previewThumb} resizeMode="cover" />
+          <Text style={styles.previewText}>Adjunta a la nueva tarea</Text>
+          <TouchableOpacity
+            style={styles.iconButton}
+            activeOpacity={0.7}
+            onPress={handleRemovePreview}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close-circle" size={22} color={Colors.error} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* Lista de tareas */}
       {loading ? (
@@ -157,6 +254,42 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
           }
         />
       )}
+
+      {/* Modal de foto ampliada */}
+      <Modal
+        visible={viewingTask !== undefined}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewingTask(undefined)}
+      >
+        <View style={styles.modalOverlay}>
+          <Image
+            source={{ uri: viewingTask?.photoUri }}
+            style={styles.modalImage}
+            resizeMode="contain"
+          />
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              style={styles.modalButton}
+              activeOpacity={0.8}
+              onPress={() => viewingTask && handleClearPhoto(viewingTask.id)}
+            >
+              <Ionicons name="trash-outline" size={20} color={Colors.error} />
+              <Text style={[styles.modalButtonText, { color: Colors.error }]}>
+                Quitar foto
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalButton}
+              activeOpacity={0.8}
+              onPress={() => setViewingTask(undefined)}
+            >
+              <Ionicons name="close" size={20} color={Colors.textPrimary} />
+              <Text style={styles.modalButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -201,7 +334,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 24,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   inputWrapper: {
     flex: 1,
@@ -223,6 +356,16 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     height: '100%',
   },
+  squareButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   addButton: {
     width: 52,
     height: 52,
@@ -235,20 +378,46 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
 
+  // Vista previa
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 24,
+    marginBottom: 12,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    padding: 8,
+  },
+  previewThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+  },
+  previewText: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+
   // Lista
   listContent: {
     paddingHorizontal: 24,
     paddingBottom: 24,
   },
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  taskCard: {
     backgroundColor: Colors.surfaceSecondary,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    padding: 14,
+    gap: 12,
+  },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
   checkbox: {
@@ -274,8 +443,16 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textDecorationLine: 'line-through',
   },
-  deleteButton: {
+  iconButton: {
     padding: 4,
+  },
+  thumbContainer: {
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  taskThumb: {
+    width: '100%',
+    height: 160,
   },
   separator: {
     height: 10,
@@ -302,5 +479,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: Colors.overlay,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    gap: 20,
+  },
+  modalImage: {
+    width: '100%',
+    height: '70%',
+    borderRadius: 12,
+    backgroundColor: Colors.backgroundSecondary,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.surfacePrimary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+  },
+  modalButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
 });

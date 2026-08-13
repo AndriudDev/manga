@@ -47,7 +47,7 @@ export const TaskRepository = {
   async updateTask(
     owner: string,
     id: string,
-    changes: Partial<Pick<TodoTask, 'title' | 'completed'>>,
+    changes: Partial<Pick<TodoTask, 'title' | 'completed' | 'photoUri'>>,
   ): Promise<void> {
     const tasks = await this.getTasks(owner);
     await this.saveTasks(
