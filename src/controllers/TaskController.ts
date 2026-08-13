@@ -22,11 +22,15 @@ export const TaskController = {
     return TaskRepository.getTasks(owner);
   },
 
-  /** CREATE — crea la tarea (con foto opcional) y devuelve la lista actualizada. */
-  async addTask(title: string, photoUri?: string): Promise<TodoTask[]> {
+  /** CREATE — crea la tarea (con foto y ubicación opcionales) y devuelve la lista actualizada. */
+  async addTask(
+    title: string,
+    photoUri?: string,
+    location?: TodoTask['location'],
+  ): Promise<TodoTask[]> {
     const owner = await this.getOwner();
     if (!owner || title.trim().length === 0) return TaskRepository.getTasks(owner ?? '');
-    const task = createTask(title, photoUri);
+    const task = createTask(title, photoUri, location);
     await TaskRepository.addTask(owner, task);
     return TaskRepository.getTasks(owner);
   },

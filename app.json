@@ -30,6 +30,12 @@
           "photosPermission": "MangaTools necesita acceso a tus fotos para adjuntarlas a tus tareas.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "MangaTools necesita tu ubicación para registrar las coordenadas de cada tarea."
+        }
       ]
     ]
   }

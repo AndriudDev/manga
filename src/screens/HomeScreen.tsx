@@ -18,8 +18,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../theme/colors';
 import { TaskController } from '../controllers/TaskController';
-import { TodoTask } from '../models/Task';
+import { TodoTask, TaskLocation } from '../models/Task';
 import { persistPhoto, deletePhoto } from '../models/PhotoStore';
+import { LocationTracker } from '../models/LocationTracker';
 
 interface HomeScreenProps {
   userName?: string;
@@ -31,7 +32,9 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [previewPhoto, setPreviewPhoto] = useState<string | undefined>(undefined);
+  const [previewLocation, setPreviewLocation] = useState<TaskLocation | undefined>(undefined);
   const [viewingTask, setViewingTask] = useState<TodoTask | undefined>(undefined);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const refresh = useCallback(async () => {
     setTasks(await TaskController.getTasks());
@@ -65,6 +68,29 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
     setPreviewPhoto(await persistPhoto(asset.uri));
   };
 
+  const handleCaptureLocation = async () => {
+    const result = await LocationTracker.capture();
+    if (!result.ok) {
+      if (result.reason === 'denied') {
+        Alert.alert(
+          'Permiso requerido',
+          'Necesitamos acceso a tu ubicación para registrar las coordenadas de la tarea.',
+        );
+      } else {
+        Alert.alert(
+          'Ubicación no disponible',
+          'No se pudo obtener la ubicación actual. Inténtalo de nuevo.',
+        );
+      }
+      return;
+    }
+    setPreviewLocation(result.location);
+  };
+
+  const handleRemoveLocation = () => {
+    setPreviewLocation(undefined);
+  };
+
   const handleRemovePreview = async () => {
     if (previewPhoto) {
       await deletePhoto(previewPhoto);
@@ -73,12 +99,40 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
   };
 
   const handleAdd = async () => {
-    if (input.trim().length === 0) return;
-    const updated = await TaskController.addTask(input, previewPhoto);
-    setTasks(updated);
-    setInput('');
-    // La foto pasa a ser propiedad de la tarea; no se elimina el archivo.
-    setPreviewPhoto(undefined);
+    if (input.trim().length === 0 || isSubmitting) return;
+
+    setIsSubmitting(true);
+    try {
+      // Las coordenadas son obligatorias: usa la captura previa o las obtiene ahora.
+      let location = previewLocation;
+      if (!location) {
+        const result = await LocationTracker.capture();
+        if (!result.ok) {
+          if (result.reason === 'denied') {
+            Alert.alert(
+              'Permiso requerido',
+              'Necesitamos acceso a tu ubicación para crear la tarea.',
+            );
+          } else {
+            Alert.alert(
+              'Ubicación no disponible',
+              'No se pudo obtener la ubicación actual. Inténtalo de nuevo.',
+            );
+          }
+          return;
+        }
+        location = result.location;
+      }
+
+      const updated = await TaskController.addTask(input, previewPhoto, location);
+      setTasks(updated);
+      setInput('');
+      // La foto pasa a ser propiedad de la tarea; no se elimina el archivo.
+      setPreviewPhoto(undefined);
+      setPreviewLocation(undefined);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleToggle = async (id: string) => {
@@ -137,6 +191,14 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
           <Ionicons name="trash-outline" size={20} color={Colors.error} />
         </TouchableOpacity>
       </View>
+      {item.location ? (
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={14} color={Colors.accentSecondary} />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {item.location.latitude.toFixed(5)}, {item.location.longitude.toFixed(5)}
+          </Text>
+        </View>
+      ) : null}
       {item.photoUri ? (
         <TouchableOpacity
           style={styles.thumbContainer}
@@ -203,15 +265,27 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
           <Ionicons name="camera" size={22} color={Colors.accentTertiary} />
         </TouchableOpacity>
         <TouchableOpacity
+          style={styles.squareButton}
+          activeOpacity={0.7}
+          onPress={handleCaptureLocation}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="location" size={22} color={Colors.accentSecondary} />
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[
             styles.addButton,
-            input.trim().length === 0 && styles.addButtonDisabled,
+            (input.trim().length === 0 || isSubmitting) && styles.addButtonDisabled,
           ]}
           activeOpacity={0.8}
           onPress={handleAdd}
-          disabled={input.trim().length === 0}
+          disabled={input.trim().length === 0 || isSubmitting}
         >
-          <Ionicons name="add" size={26} color={Colors.textPrimary} />
+          {isSubmitting ? (
+            <ActivityIndicator color={Colors.textPrimary} size="small" />
+          ) : (
+            <Ionicons name="add" size={26} color={Colors.textPrimary} />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -224,6 +298,24 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
             style={styles.iconButton}
             activeOpacity={0.7}
             onPress={handleRemovePreview}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close-circle" size={22} color={Colors.error} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* Vista previa de la ubicación para la nueva tarea */}
+      {previewLocation ? (
+        <View style={styles.previewRow}>
+          <Ionicons name="location" size={20} color={Colors.accentSecondary} />
+          <Text style={styles.previewText} numberOfLines={1}>
+            {previewLocation.latitude.toFixed(5)}, {previewLocation.longitude.toFixed(5)}
+          </Text>
+          <TouchableOpacity
+            style={styles.iconButton}
+            activeOpacity={0.7}
+            onPress={handleRemoveLocation}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Ionicons name="close-circle" size={22} color={Colors.error} />
@@ -445,6 +537,16 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: 4,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  locationText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.textSecondary,
   },
   thumbContainer: {
     borderRadius: 8,
