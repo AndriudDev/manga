@@ -6,16 +6,16 @@ import { TaskLocation } from './Task';
 
 export type CaptureLocationResult =
   | { ok: true; location: TaskLocation }
-  | { ok: false; reason: 'denied' | 'failed' };
+  | { ok: false; reason: 'denied' | 'failed'; canAskAgain: boolean };
 
 export const LocationTracker = {
   /**
    * Pide permiso de ubicación y obtiene la posición actual.
    */
   async capture(): Promise<CaptureLocationResult> {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      return { ok: false, reason: 'denied' };
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (permission.status !== 'granted') {
+      return { ok: false, reason: 'denied', canAskAgain: permission.canAskAgain };
     }
 
     try {
@@ -28,7 +28,7 @@ export const LocationTracker = {
         },
       };
     } catch {
-      return { ok: false, reason: 'failed' };
+      return { ok: false, reason: 'failed', canAskAgain: true };
     }
   },
 };

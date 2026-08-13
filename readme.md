@@ -2,7 +2,7 @@
 
 **Aplicación móvil de gestión de tareas con autenticación — construida con React Native (Expo), TypeScript y arquitectura MVC.**
 
-MangaTools es una aplicación móvil orientada a fanáticos del manga y los cómics: permite **registrarse e iniciar sesión**, y gestionar una **lista de tareas pendientes (To-Do List)** con persistencia local. Cada tarea puede incluir una **fotografía tomada con la cámara del dispositivo** y registra obligatoriamente las **coordenadas GPS** del lugar donde fue creada. La interfaz implementa dark mode con estética japonesa/manga: fondos oscuros, acentos rojos vibrantes y una paleta de colores centralizada.
+MangaTools es una aplicación móvil orientada a fanáticos del manga y los cómics: permite **registrarse e iniciar sesión**, y gestionar una **lista de tareas pendientes (To-Do List)** con persistencia local. Cada tarea puede incluir una **fotografía tomada con la cámara del dispositivo** y, opcionalmente, las **coordenadas GPS** del lugar donde fue creada. La interfaz implementa dark mode con estética japonesa/manga: fondos oscuros, acentos rojos vibrantes y una paleta de colores centralizada.
 
 **Público objetivo:** Lectores de manga y cómics que buscan una experiencia de organización en su dispositivo móvil.
 
@@ -21,6 +21,7 @@ MangaTools es una aplicación móvil orientada a fanáticos del manga y los cóm
 | **Cámara** | `expo-image-picker` | SDK 57 |
 | **Ubicación (GPS)** | `expo-location` | SDK 57 |
 | **Sistema de archivos** | `expo-file-system` | SDK 57 |
+| **Testing** | Jest + `jest-expo` | `~29.7.0` / SDK 57 |
 
 ### Decisiones técnicas
 
@@ -31,6 +32,7 @@ MangaTools es una aplicación móvil orientada a fanáticos del manga y los cóm
 - **Tokens de diseño centralizados**: toda la paleta de colores se define en `src/theme/colors.ts` como un objeto `as const`.
 - **Navegación con React Navigation v7**: `@react-navigation/native-stack` para transiciones nativas entre pantallas con tipado fuerte de rutas (`src/types/navigation.ts`).
 - **Permisos nativos**: cámara, fotos y ubicación configurados vía config plugins de Expo en `app.json`.
+- **Pruebas automatizadas de periféricos**: Jest con preset `jest-expo`. Los plugins nativos (`expo-location`, `expo-file-system`) se **mockean** a nivel de módulo para verificar la lógica real de la app ante cada escenario (permiso denegado, GPS apagado, foto inexistente) sin necesidad de dispositivo.
 
 ---
 
@@ -38,6 +40,10 @@ MangaTools es una aplicación móvil orientada a fanáticos del manga y los cóm
 
 ```
 manga/
+├── __tests__/                  # Pruebas automatizadas (Jest)
+│   ├── LocationTracker.test.ts #   GPS: permiso concedido/denegado/fallo
+│   ├── PhotoStore.test.ts      #   Cámara: persistencia y limpieza de fotos
+│   └── TaskController.test.ts  #   Orquestación: foto + ubicación + API externa
 ├── src/
 │   ├── models/                 # MODELO — entidades y acceso a datos
 │   │   ├── User.ts             #   Entidad de usuario (hash + normalización)
@@ -93,9 +99,9 @@ manga/
 
 `HomeScreen` es la pantalla de entrada tras iniciar sesión:
 
-- **Create**: agregar tarea con texto (obligatorio), foto opcional y **coordenadas GPS obligatorias**.
+- **Create**: agregar tarea con texto (obligatorio) y **foto y ubicación GPS opcionales**.
 - **Read**: lista persistente, separada por usuario.
-- **Update**: marcar/desmarcar tarea como completada (checkbox con tachado).
+- **Update**: marcar/desmarcar tarea como completada (checkbox con tachado) y **editar el título** desde el icono de lápiz (modal con guardado).
 - **Delete**: eliminar una tarea (y su archivo de foto asociado si existe).
 
 ### Fotografía con la cámara
@@ -104,12 +110,18 @@ manga/
 - Cada tarea puede adjuntar/reemplazar su foto; se muestra como thumbnail y se amplía en un modal a pantalla completa con opción "Quitar foto".
 - Las fotos se copian al **directorio de documentos** de la app (`Paths.document/task-photos`) para persistir entre sesiones (las URIs de la cámara viven en caché).
 
-### Coordenadas GPS obligatorias
+### Coordenadas GPS (opcionales)
 
-- Al presionar el botón **"+"**, si aún no hay coordenadas capturadas, la app obtiene la ubicación automáticamente: el botón muestra un **spinner y queda deshabilitado hasta que las coordenadas estén listas**.
-- Si el permiso de ubicación está denegado o el GPS falla, la tarea **no se crea** y se muestra una alerta.
-- También hay un botón de ubicación manual (pin) para precapturar y ver la vista previa de coordenadas antes de crear la tarea.
-- Cada tarea muestra sus coordenadas (lat, lng) con icono de pin.
+- La ubicación es **opcional**: se adjunta a la tarea solo si se captura antes con el botón de ubicación (pin).
+- El botón de ubicación (pin) obtiene las coordenadas del dispositivo vía `expo-location`; mientras captura muestra un **spinner** y se deshabilita.
+- Si se niega el permiso de ubicación o el GPS falla, la ubicación simplemente **no se adjunta** (la tarea se puede crear igual).
+- Cada tarea que tenga coordenadas las muestra (lat, lng) con icono de pin.
+
+### Manejo de permisos (cámara y ubicación)
+
+- Al usar la cámara o la ubicación, la app llama al **permiso nativo del sistema**; si se concede, continúa (abre la cámara o captura las coordenadas).
+- Si se niega, muestra el aviso **"Permiso requerido — Se necesita el permiso de {cámara|ubicación} para seguir."** con un botón **"Abrir ajustes"**: Android deja de mostrar el diálogo tras la primera denegación, por lo que el permiso se otorga desde la configuración del sistema (`Linking.openSettings()`).
+- La ubicación no es obligatoria: aunque se niegue el permiso o falle el GPS, la tarea se crea igual sin coordenadas.
 
 ### Integración con Servicios Web y APIs
 
@@ -120,6 +132,29 @@ manga/
 - **Feedback visual**: ambos botones muestran spinner mientras se procesa, se deshabilitan entre sí durante la operación y confirman el resultado (o el error de conexión) mediante un modal/alert.
 
 > **Servicio de prueba**: JSONPlaceholder es una API REST pública de demostración que no persiste los datos entre reinicios del servidor. Para usar un backend real solo hay que cambiar la constante `API_BASE_URL` en `src/models/TaskApi.ts` por la URL del servicio propio.
+>
+> **Sincronización manual**: tanto "Sincronizar" como "Importar de API" se disparan a mano desde `HomeScreen`. Se descartó deliberadamente un auto-sync en tiempo real (polling/WebSocket) para mantener el control en el usuario y evitar depender de un servidor propio; la consigna permite esta lectura (enumera la sincronización en tiempo real como ejemplo de ampliación de la integración con APIs, no como requisito).
+
+---
+
+## Pruebas Automatizadas (Periféricos + Integración)
+
+Para cumplir el requisito de *"pruebas de funcionalidad de periféricos (captura de imágenes y obtención de ubicación)"*, el proyecto incluye suites de Jest que **mockean los plugins nativos** (`expo-location`, `expo-file-system`) y verifican la lógica real de la app frente a cada escenario — sin dispositivo físico. Esto da cobertura de casos difíciles de reproducir a mano (permiso denegado, GPS apagado, archivo de foto inexistente) de forma rápida y repetible.
+
+| Suite | Escenarios cubiertos |
+|---|---|
+| `LocationTracker.test.ts` | Permiso concedido → devuelve coordenadas · permiso denegado → `denied` (sin consultar GPS) · GPS agotado → `failed` |
+| `PhotoStore.test.ts` | La foto capturada se copia al almacenamiento persistente · se elimina · tolera archivo inexistente (best effort) |
+| `TaskController.test.ts` | Tarea con foto + coordenadas GPS · adjuntar/reemplazar/quitar foto (borra el archivo) · **editar título** · eliminar tarea (borra la foto) · importar sin duplicados (dedupe por título) · sync POST/PUT · tolerancia a fallo de red |
+
+**Cómo ejecutarlas**:
+
+```bash
+npm test              # corre las 3 suites (19 tests)
+npm test -- --watch   # modo watch, re-ejecuta al guardar
+```
+
+Resultado esperado: `Test Suites: 3 passed · Tests: 19 passed`.
 
 ---
 
@@ -138,7 +173,7 @@ manga/
                               ┌──────────────────────────┐
                               │   HomeScreen (To-Do)     │
                               │  • Agregar (texto+foto)  │
-                              │  • GPS obligatorio (+)   │
+                              │  • GPS opcional (pin)    │
                               │  • Lista CRUD persistente│
                               │  • Sincronizar con API   │
                               │  • Importar de API       │
@@ -149,7 +184,7 @@ manga/
 1. **WelcomeScreen**: pantalla de aterrizaje con identidad visual MangaTools y botón "Iniciar Sesión".
 2. **LoginScreen**: login real contra los usuarios de AsyncStorage vía `AuthController.login`. Con credenciales válidas muestra pantalla de éxito y navega a `Home`. Enlace a registro.
 3. **RegisterScreen**: crea la cuenta vía `AuthController.register` (valida campos, formato de correo, longitud de contraseña, confirmación y correos duplicados), inicia sesión automáticamente y navega a `Home`.
-4. **HomeScreen**: To-Do List con CRUD persistente. El botón **"+"** obtiene las coordenadas GPS (spinner hasta tenerlas) y crea la tarea con foto opcional y ubicación. "Cerrar Sesión" limpia la sesión y vuelve a Welcome.
+4. **HomeScreen**: To-Do List con CRUD persistente. El botón **"+"** crea la tarea con texto (obligatorio) y **foto y ubicación opcionales** (la ubicación se adjunta solo si se capturó con el botón de pin). "Cerrar Sesión" limpia la sesión y vuelve a Welcome.
 5. **Tipado de navegación**: rutas en `src/types/navigation.ts` como `RootStackParamList`, validando cada `navigate()` en tiempo de compilación.
 
 ---
@@ -185,6 +220,7 @@ npx expo start
 | `npm run android` | Abre directamente en emulador/dispositivo Android |
 | `npm run ios` | Abre directamente en emulador/dispositivo iOS |
 | `npm run web` | Ejecuta la versión web de la app |
+| `npm test` | Ejecuta las pruebas automatizadas (Jest) |
 
 ### Probar la app
 

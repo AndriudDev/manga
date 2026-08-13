@@ -54,6 +54,18 @@ export const TaskController = {
     return TaskRepository.getTasks(owner);
   },
 
+  /** UPDATE — modifica el título de una tarea (ignora valores vacíos). */
+  async updateTitle(id: string, title: string): Promise<TodoTask[]> {
+    const owner = await this.getOwner();
+    if (!owner) return [];
+    const trimmed = title.trim();
+    const tasks = await TaskRepository.getTasks(owner);
+    if (trimmed.length > 0 && tasks.some((task) => task.id === id)) {
+      await TaskRepository.updateTask(owner, id, { title: trimmed });
+    }
+    return TaskRepository.getTasks(owner);
+  },
+
   /** UPDATE — adjunta (o reemplaza) la foto de una tarea. */
   async attachPhoto(id: string, sourceUri: string): Promise<TodoTask[]> {
     const owner = await this.getOwner();

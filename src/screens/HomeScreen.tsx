@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Linking,
   Modal,
   Alert,
 } from 'react-native';
@@ -27,13 +28,27 @@ interface HomeScreenProps {
   onLogout: () => void;
 }
 
+/**
+ * Mensaje informativo mostrado cuando el permiso es denegado. Android no vuelve
+ * a mostrar el diálogo nativo una vez negado el permiso, por lo que se ofrece
+ * "Abrir ajustes" para que el usuario pueda otorgarlo desde la configuración.
+ */
+function showPermissionBlockedAlert(feature: 'cámara' | 'ubicación'): void {
+  Alert.alert('Permiso requerido', `Se necesita el permiso de ${feature} para seguir.`, [
+    { text: 'Abrir ajustes', onPress: () => Linking.openSettings() },
+  ]);
+}
+
 export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
   const [tasks, setTasks] = useState<TodoTask[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [previewPhoto, setPreviewPhoto] = useState<string | undefined>(undefined);
   const [previewLocation, setPreviewLocation] = useState<TaskLocation | undefined>(undefined);
+  const [capturingLocation, setCapturingLocation] = useState(false);
   const [viewingTask, setViewingTask] = useState<TodoTask | undefined>(undefined);
+  const [editingTask, setEditingTask] = useState<TodoTask | undefined>(undefined);
+  const [editText, setEditText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -49,10 +64,7 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
   const openCamera = async (): Promise<ImagePicker.ImagePickerAsset | undefined> => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
-        'Permiso requerido',
-        'Necesitamos acceso a la cámara para adjuntar fotos a tus tareas.',
-      );
+      showPermissionBlockedAlert('cámara');
       return undefined;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -71,22 +83,25 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
   };
 
   const handleCaptureLocation = async () => {
-    const result = await LocationTracker.capture();
-    if (!result.ok) {
-      if (result.reason === 'denied') {
-        Alert.alert(
-          'Permiso requerido',
-          'Necesitamos acceso a tu ubicación para registrar las coordenadas de la tarea.',
-        );
-      } else {
-        Alert.alert(
-          'Ubicación no disponible',
-          'No se pudo obtener la ubicación actual. Inténtalo de nuevo.',
-        );
+    if (capturingLocation) return;
+    setCapturingLocation(true);
+    try {
+      const result = await LocationTracker.capture();
+      if (!result.ok) {
+        if (result.reason === 'denied') {
+          showPermissionBlockedAlert('ubicación');
+        } else {
+          Alert.alert(
+            'Ubicación no disponible',
+            'No se pudo obtener la ubicación actual. Inténtalo de nuevo.',
+          );
+        }
+        return;
       }
-      return;
+      setPreviewLocation(result.location);
+    } finally {
+      setCapturingLocation(false);
     }
-    setPreviewLocation(result.location);
   };
 
   const handleRemoveLocation = () => {
@@ -105,28 +120,8 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
 
     setIsSubmitting(true);
     try {
-      // Las coordenadas son obligatorias: usa la captura previa o las obtiene ahora.
-      let location = previewLocation;
-      if (!location) {
-        const result = await LocationTracker.capture();
-        if (!result.ok) {
-          if (result.reason === 'denied') {
-            Alert.alert(
-              'Permiso requerido',
-              'Necesitamos acceso a tu ubicación para crear la tarea.',
-            );
-          } else {
-            Alert.alert(
-              'Ubicación no disponible',
-              'No se pudo obtener la ubicación actual. Inténtalo de nuevo.',
-            );
-          }
-          return;
-        }
-        location = result.location;
-      }
-
-      const updated = await TaskController.addTask(input, previewPhoto, location);
+      // La ubicación es opcional: se adjunta solo si se capturó con el botón de ubicación.
+      const updated = await TaskController.addTask(input, previewPhoto, previewLocation);
       setTasks(updated);
       setInput('');
       // La foto pasa a ser propiedad de la tarea; no se elimina el archivo.
@@ -154,6 +149,24 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
 
   const handleDelete = async (id: string) => {
     setTasks(await TaskController.deleteTask(id));
+  };
+
+  /** Abre el modal de edición con el título actual de la tarea. */
+  const handleEditTask = (task: TodoTask) => {
+    setEditText(task.title);
+    setEditingTask(task);
+  };
+
+  const handleCancelEdit = () => {
+    setEditText('');
+    setEditingTask(undefined);
+  };
+
+  /** Guarda el título editado y cierra el modal. */
+  const handleSaveEdit = async () => {
+    if (!editingTask || editText.trim().length === 0) return;
+    setTasks(await TaskController.updateTitle(editingTask.id, editText));
+    handleCancelEdit();
   };
 
   /** Sincroniza la lista local con el servicio web (almacenamiento remoto). */
@@ -230,6 +243,14 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
           hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
         >
           <Ionicons name="camera-outline" size={20} color={Colors.accentTertiary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.iconButton}
+          activeOpacity={0.7}
+          onPress={() => handleEditTask(item)}
+          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+        >
+          <Ionicons name="create-outline" size={20} color={Colors.accentTertiary} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.iconButton}
@@ -347,9 +368,14 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
           style={styles.squareButton}
           activeOpacity={0.7}
           onPress={handleCaptureLocation}
+          disabled={capturingLocation}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="location" size={22} color={Colors.accentSecondary} />
+          {capturingLocation ? (
+            <ActivityIndicator color={Colors.accentSecondary} size="small" />
+          ) : (
+            <Ionicons name="location" size={22} color={Colors.accentSecondary} />
+          )}
         </TouchableOpacity>
         <TouchableOpacity
           style={[
@@ -458,6 +484,49 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
               <Ionicons name="close" size={20} color={Colors.textPrimary} />
               <Text style={styles.modalButtonText}>Cerrar</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de edición de tarea */}
+      <Modal
+        visible={editingTask !== undefined}
+        transparent
+        animationType="slide"
+        onRequestClose={handleCancelEdit}
+      >
+        <View style={styles.editOverlay}>
+          <View style={styles.editCard}>
+            <Text style={styles.editTitle}>Editar tarea</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editText}
+              onChangeText={setEditText}
+              placeholder="Título de la tarea"
+              placeholderTextColor={Colors.textSecondary}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleSaveEdit}
+            />
+            <View style={styles.editActions}>
+              <TouchableOpacity
+                style={styles.modalButton}
+                activeOpacity={0.8}
+                onPress={handleCancelEdit}
+              >
+                <Ionicons name="close" size={18} color={Colors.textSecondary} />
+                <Text style={styles.modalButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalButton}
+                activeOpacity={0.8}
+                onPress={handleSaveEdit}
+                disabled={editText.trim().length === 0}
+              >
+                <Ionicons name="checkmark" size={18} color={Colors.success} />
+                <Text style={[styles.modalButtonText, { color: Colors.success }]}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -719,5 +788,41 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+
+  // Modal de edición
+  editOverlay: {
+    flex: 1,
+    backgroundColor: Colors.overlay,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  editCard: {
+    width: '100%',
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 16,
+    padding: 20,
+    gap: 16,
+  },
+  editTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  editInput: {
+    backgroundColor: Colors.backgroundSecondary,
+    color: Colors.textPrimary,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+  },
+  editActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
   },
 });
