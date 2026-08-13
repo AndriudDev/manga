@@ -44,11 +44,12 @@ manga/
 │   │   ├── UserRepository.ts   #   Persistencia de usuarios y sesión (AsyncStorage)
 │   │   ├── Task.ts             #   Entidad de tarea (foto + ubicación opcionales)
 │   │   ├── TaskRepository.ts   #   CRUD de tareas por usuario (AsyncStorage)
+│   │   ├── TaskApi.ts          #   Cliente REST del servicio web externo (sincronización)
 │   │   ├── PhotoStore.ts       #   Copiado/borrado de fotos en almacenamiento persistente
 │   │   └── LocationTracker.ts  #   Captura de coordenadas GPS (expo-location)
 │   ├── controllers/            # CONTROLADOR — lógica de negocio
 │   │   ├── AuthController.ts   #   register / login / logout / getCurrentUser
-│   │   └── TaskController.ts   #   CRUD de tareas + adjuntar/quitar foto
+│   │   └── TaskController.ts   #   CRUD de tareas + sync/import con la API externa
 │   ├── screens/                # VISTA — pantallas de la app
 │   │   ├── AppNavigator.tsx    #   Stack Navigator (rutas y transiciones)
 │   │   ├── WelcomeScreen.tsx   #   Pantalla de bienvenida
@@ -110,6 +111,16 @@ manga/
 - También hay un botón de ubicación manual (pin) para precapturar y ver la vista previa de coordenadas antes de crear la tarea.
 - Cada tarea muestra sus coordenadas (lat, lng) con icono de pin.
 
+### Integración con Servicios Web y APIs
+
+`HomeScreen` expone dos acciones de nube (`src/models/TaskApi.ts`), implementadas como integración REST contra `https://jsonplaceholder.typicode.com` (endpoint `/todos`):
+
+- **Sincronizar (subir al servicio web)**: sincroniza la lista local con la API para **almacenar las tareas de forma remota**. Las tareas nuevas se crean (`POST /todos`) y las ya sincronizadas se actualizan (`PUT /todos/:id`) para reflejar su estado. Cada tarea sincronizada guarda su `remoteId` y se persiste localmente.
+- **Importar de API**: trae tareas desde la API externa (`GET /todos`) y las **agrega a la lista local** para completarla, evitando duplicados por título (comparación insensible a mayúsculas).
+- **Feedback visual**: ambos botones muestran spinner mientras se procesa, se deshabilitan entre sí durante la operación y confirman el resultado (o el error de conexión) mediante un modal/alert.
+
+> **Servicio de prueba**: JSONPlaceholder es una API REST pública de demostración que no persiste los datos entre reinicios del servidor. Para usar un backend real solo hay que cambiar la constante `API_BASE_URL` en `src/models/TaskApi.ts` por la URL del servicio propio.
+
 ---
 
 ## Flujo de Pantallas e Interacción
@@ -129,6 +140,8 @@ manga/
                               │  • Agregar (texto+foto)  │
                               │  • GPS obligatorio (+)   │
                               │  • Lista CRUD persistente│
+                              │  • Sincronizar con API   │
+                              │  • Importar de API       │
                               │  • Cerrar sesión         │
                               └──────────────────────────┘
 ```

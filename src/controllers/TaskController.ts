@@ -3,8 +3,15 @@
 
 import { AuthController } from './AuthController';
 import { TaskRepository } from '../models/TaskRepository';
+import { TaskApi } from '../models/TaskApi';
 import { TodoTask, createTask } from '../models/Task';
 import { persistPhoto, deletePhoto } from '../models/PhotoStore';
+
+/** Resumen del resultado de una sincronización con el servicio web. */
+export interface SyncResult {
+  created: number;
+  updated: number;
+}
 
 export const TaskController = {
   /**
@@ -87,5 +94,73 @@ export const TaskController = {
     }
     await TaskRepository.deleteTask(owner, id);
     return TaskRepository.getTasks(owner);
+  },
+
+  /**
+   * Sincronización — sube las tareas locales al servicio web para almacenarlas
+   * de forma remota. Las nuevas se crean (POST) y las ya sincronizadas se
+   * actualizan (PUT) para reflejar su estado. Devuelve el resumen del proceso.
+   */
+  async syncToRemote(): Promise<SyncResult> {
+    const owner = await this.getOwner();
+    if (!owner) return { created: 0, updated: 0 };
+
+    const tasks = await TaskRepository.getTasks(owner);
+    const result: SyncResult = { created: 0, updated: 0 };
+
+    const synced = await Promise.all(
+      tasks.map(async (task): Promise<TodoTask> => {
+        try {
+          if (task.remoteId !== undefined) {
+            const remote = await TaskApi.update(task.remoteId, task.title, task.completed);
+            result.updated += 1;
+            return { ...task, remoteId: remote.id };
+          }
+          const remote = await TaskApi.create(task.title, task.completed);
+          result.created += 1;
+          return { ...task, remoteId: remote.id };
+        } catch {
+          // No lograda: se conserva sin remoteId para reintentar en la próxima.
+          return task;
+        }
+      }),
+    );
+
+    await TaskRepository.saveTasks(owner, synced);
+    return result;
+  },
+
+  /**
+   * Importación — trae tareas desde la API externa y las agrega a la lista local.
+   * Evita duplicados comparando el título (insensible a mayúsculas) contra las
+   * tareas ya presentes. Devuelve la cantidad de tareas nuevas importadas.
+   */
+  async importFromApi(): Promise<number> {
+    const owner = await this.getOwner();
+    if (!owner) return 0;
+
+    const remote = await TaskApi.list();
+    const tasks = await TaskRepository.getTasks(owner);
+    const existingTitles = new Set(tasks.map((task) => task.title.trim().toLowerCase()));
+
+    const added: TodoTask[] = [];
+    for (const item of remote) {
+      const title = item.title.trim();
+      const normalized = title.toLowerCase();
+      if (!title || existingTitles.has(normalized)) continue;
+      existingTitles.add(normalized);
+      added.push({
+        id: `api-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title,
+        completed: item.completed,
+        createdAt: new Date().toISOString(),
+        remoteId: item.id,
+      });
+    }
+
+    if (added.length > 0) {
+      await TaskRepository.saveTasks(owner, [...added, ...tasks]);
+    }
+    return added.length;
   },
 };

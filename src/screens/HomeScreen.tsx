@@ -35,6 +35,8 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
   const [previewLocation, setPreviewLocation] = useState<TaskLocation | undefined>(undefined);
   const [viewingTask, setViewingTask] = useState<TodoTask | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const refresh = useCallback(async () => {
     setTasks(await TaskController.getTasks());
@@ -154,6 +156,53 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
     setTasks(await TaskController.deleteTask(id));
   };
 
+  /** Sincroniza la lista local con el servicio web (almacenamiento remoto). */
+  const handleSync = async () => {
+    if (syncing || importing) return;
+    setSyncing(true);
+    try {
+      const result = await TaskController.syncToRemote();
+      setTasks(await TaskController.getTasks());
+      if (result.created === 0 && result.updated === 0) {
+        Alert.alert('Sincronización', 'No hay tareas nuevas para subir al servicio web.');
+      } else {
+        Alert.alert(
+          'Sincronización completa',
+          `${result.created} tarea(s) creada(s) y ${result.updated} actualizada(s) en el servicio web.`,
+        );
+      }
+    } catch {
+      Alert.alert(
+        'Error de sincronización',
+        'No se pudo conectar con el servicio web. Revisa tu conexión e inténtalo de nuevo.',
+      );
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  /** Importa tareas desde la API externa para completar la lista. */
+  const handleImport = async () => {
+    if (syncing || importing) return;
+    setImporting(true);
+    try {
+      const count = await TaskController.importFromApi();
+      setTasks(await TaskController.getTasks());
+      if (count === 0) {
+        Alert.alert('Importación', 'No se encontraron tareas nuevas para importar.');
+      } else {
+        Alert.alert('Importación completa', `Se importaron ${count} tarea(s) desde la API externa.`);
+      }
+    } catch {
+      Alert.alert(
+        'Error de importación',
+        'No se pudo obtener la lista desde la API externa. Revisa tu conexión e inténtalo de nuevo.',
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const pendingCount = tasks.filter((task) => !task.completed).length;
 
   const renderItem = ({ item }: { item: TodoTask }) => (
@@ -234,6 +283,36 @@ export default function HomeScreen({ userName, onLogout }: HomeScreenProps) {
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="log-out-outline" size={22} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Acciones con el servicio web (sincronización e importación) */}
+      <View style={styles.cloudRow}>
+        <TouchableOpacity
+          style={styles.cloudButton}
+          activeOpacity={0.8}
+          onPress={handleSync}
+          disabled={syncing || importing}
+        >
+          {syncing ? (
+            <ActivityIndicator color={Colors.accentPrimary} size="small" />
+          ) : (
+            <Ionicons name="cloud-upload-outline" size={18} color={Colors.accentPrimary} />
+          )}
+          <Text style={styles.cloudButtonText}>Sincronizar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.cloudButton}
+          activeOpacity={0.8}
+          onPress={handleImport}
+          disabled={syncing || importing}
+        >
+          {importing ? (
+            <ActivityIndicator color={Colors.accentSecondary} size="small" />
+          ) : (
+            <Ionicons name="cloud-download-outline" size={18} color={Colors.accentSecondary} />
+          )}
+          <Text style={styles.cloudButtonText}>Importar de API</Text>
         </TouchableOpacity>
       </View>
 
@@ -418,6 +497,31 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfacePrimary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Servicio web (sincronización / importación)
+  cloudRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 24,
+    marginBottom: 12,
+  },
+  cloudButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  cloudButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
 
   // Entrada

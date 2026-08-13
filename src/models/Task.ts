@@ -13,6 +13,8 @@ export interface TodoTask {
   createdAt: string;
   photoUri?: string;
   location?: TaskLocation;
+  /** Identificador asignado por el servicio web al sincronizar la tarea. */
+  remoteId?: number;
 }
 
 export function createTask(
